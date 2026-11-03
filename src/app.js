@@ -65,6 +65,10 @@ export function createApp({store,clarity,base,password}) {
     await server.connect(transport);await transport.handleRequest(req,res,req.body);
   });
   app.all('/mcp',(_req,res)=>res.status(405).set('Allow','POST').end());
-  app.use((error,_req,res,_next)=>{const invalid=error instanceof z.ZodError;if(!invalid) console.error('Request failed:',error.name);if(!res.headersSent)res.status(invalid?400:500).send(page('Pieprasījums neizdevās',invalid?'<p>Pārbaudiet ievadītos projekta laukus.</p>':'<p>Pieprasījumu neizdevās apstrādāt. Autorizācijas laikā sāciet savienojuma pievienošanu vēlreiz.</p>'));});
+  app.use((error,req,res,_next)=>{
+    const invalid=error instanceof z.ZodError;
+    if(!invalid) console.error('Request failed:',JSON.stringify({route:req.route?.path||'middleware',method:req.method,name:error.name,code:error.code,errno:error.errcode,source:String(error.stack||'').match(/(?:src[/\\][\w.-]+\.js):\d+:\d+/g)?.slice(0,5)}));
+    if(!res.headersSent)res.status(invalid?400:500).send(page('Pieprasījums neizdevās',invalid?'<p>Pārbaudiet ievadītos projekta laukus.</p>':'<p>Pieprasījumu neizdevās apstrādāt. Autorizācijas laikā sāciet savienojuma pievienošanu vēlreiz.</p>'));
+  });
   return {app,provider};
 }
