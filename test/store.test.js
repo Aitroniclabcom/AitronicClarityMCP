@@ -1,0 +1,21 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Store } from '../src/store.js';
+test('project credentials are encrypted and survive reopening; public list excludes secrets', () => {
+  const dir=mkdtempSync(join(tmpdir(),'clarity-store-')),path=join(dir,'test.sqlite');
+  const s = new Store(path, 'a'.repeat(64));
+  assert.equal(s.projects().length, 8);
+  s.saveProject({ id: 'rockmole-lv', name: 'Rockmole', domain: 'rockmole.lv', token: 'private-api-token' });
+  assert.equal(s.token('rockmole-lv'), 'private-api-token');
+  assert.ok(!JSON.stringify(s.projects()).includes('private-api-token'));
+  assert.ok(!s.db.prepare('SELECT token FROM projects WHERE id=?').get('rockmole-lv').token.includes('private-api-token'));
+  s.saveProject({ id: 'rockmole-lv', name: 'Rockmole', domain: 'rockmole.lv', token: '' });
+  assert.equal(s.token('rockmole-lv'), 'private-api-token');
+  s.close();
+  const reopened=new Store(path,'a'.repeat(64));
+  assert.equal(reopened.token('rockmole-lv'),'private-api-token');reopened.close();
+  rmSync(dir,{recursive:true,force:true});
+});

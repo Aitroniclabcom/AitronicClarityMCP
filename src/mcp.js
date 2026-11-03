@@ -1,0 +1,14 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { dimensions } from './clarity.js';
+const annotations={readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true};
+export function createServer(store,clarity,allowed) {
+  const server=new McpServer({name:'aitronic-clarity',version:'1.0.0'},{instructions:'Clarity dashboard analytics for authorized projects. Call list_projects first, then get_insights with a project ID. API only covers the last 1–3 days, max 3 dimensions, 1000 rows; no heatmap images or recording videos. Identical queries cached for 6 hours. Daily quota 10 per project, including scheduled collection and external callers. Saved snapshots are overlapping rolling windows: never sum them as daily totals.'});
+  const permit=id=>{if(!allowed.includes(id)||!store.projects().some(p=>p.id===id&&p.enabled)) throw new Error('Project is unavailable or access was not granted');};
+  const wrap=fn=>async args=>{try{return {content:[{type:'text',text:JSON.stringify(await fn(args))}]};}catch(e){return {isError:true,content:[{type:'text',text:e.message}]};}};
+  server.registerTool('list_projects',{description:'List authorized Clarity projects and configuration status. Never returns API tokens.',inputSchema:{},annotations},wrap(()=>store.projects().filter(p=>allowed.includes(p.id)&&p.enabled).map(p=>({...p,requests_last_24h:store.used(p.id)}))));
+  server.registerTool('get_insights',{description:'Get Clarity dashboard metrics: traffic, engagement, scroll depth, rage/dead clicks, and errors. Cached 6 hours. Costs one project API request on cache miss.',inputSchema:{project:z.string().max(100),days:z.number().int().min(1).max(3).default(1),dimensions:z.array(z.enum(dimensions)).max(3).default([])},annotations},wrap(async ({project,days,dimensions})=>{permit(project);return clarity.insights(project,days,dimensions);}));
+  server.registerTool('get_history',{description:'Read saved rolling-window snapshots without using Clarity quota. History begins when collection starts. Windows overlap; do not sum. Each snapshot carries its capture time and query.',inputSchema:{project:z.string().max(100),limit:z.number().int().min(1).max(30).default(10)},annotations},wrap(({project,limit})=>{permit(project);return clarity.history(project,limit);}));
+  server.registerTool('get_capabilities',{description:'Read data availability, quotas, dimensions and collection limitations.',inputSchema:{},annotations},wrap(()=>({dimensions,days:[1,2,3],max_rows:1000,daily_requests_per_project:10,cache_hours:6,scheduled_collection_hours:12,retention_days:400,heatmaps:false,recording_videos:false,history:'Saved rolling windows, not calendar-day totals. No historical backfill through Data Export API.'})));
+  return server;
+}

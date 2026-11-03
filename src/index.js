@@ -1,0 +1,12 @@
+import { mkdirSync } from 'node:fs';
+import { Store } from './store.js';
+import { Clarity } from './clarity.js';
+import { createApp } from './app.js';
+const dir=process.env.DATA_DIR||'./data';mkdirSync(dir,{recursive:true});
+const store=new Store(dir+'/clarity.sqlite',process.env.ENCRYPTION_KEY),clarity=new Clarity(store);
+const {app}=createApp({store,clarity,base:process.env.PUBLIC_URL||'http://localhost:3000',password:process.env.ADMIN_PASSWORD});
+const server=app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('Aitronic Clarity MCP listening'));
+let collecting=false;
+const collect=async()=>{if(collecting)return;collecting=true;try{await clarity.collect();}finally{collecting=false;}};
+const startup=setTimeout(collect,30000),timer=setInterval(collect,12*3600000);
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{clearTimeout(startup);clearInterval(timer);server.close(()=>{store.close();process.exit(0);});setTimeout(()=>process.exit(0),10000).unref();});
