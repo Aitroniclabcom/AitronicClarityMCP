@@ -28,3 +28,11 @@ Highest risks: exposed credentials, unapproved project access, exhausted upstrea
 - Real Chrome browser: admin login and saving the existing Rockmole project succeeded. Fixed a reproduced interaction between Helmet's default `no-referrer` policy and strict Origin checking; `same-origin` retains local form Origin and suppresses cross-origin referrer disclosure.
 - User explicitly approved saving the newly generated admin/encryption secrets in this exact Coolify application after automatic approval review requested that confirmation. Secrets remain outside Git.
 - Pending user setup: enter each Clarity Data Export token; add the MCP URL to ChatGPT and Claude with OAuth/DCR, sign in and choose projects. Those account-level connections and real Microsoft API responses are not represented as verified.
+
+## ChatGPT authorization follow-up — 2026-11-03
+
+The user reported repeated failures while adding the ChatGPT connector. The real failed tab was `/consent`, and safe route/source diagnostics reproduced the failure at `AuthProvider.pending`. The prior implementation returned a generic HTTP 500 for missing, expired or browser-mismatched consent intents.
+
+Regression tests first reproduced HTTP 500 when a valid authorization intent was opened from another authenticated browser. The fix restarts the full SDK authorization validation and requires fresh consent in the receiving browser. Expired GET/POST intents return HTTP 410 with a recovery page, never an authorization code. Validated request intent is retained for one hour only to offer a restart link; its consent validity remains ten minutes. Already-used or missing intents instruct the user to start from the ChatGPT/Claude connector again.
+
+Production deployment `fhr1bwmczpbgnsi8w7sqfurm`, runtime commit `4f7a2cb16f7ccb6d2ce32cf8218ceef261604307`, finished healthy at 11:38 UTC. All 4 tests pass. Public `smoke-live.mjs handoff` verified separate initiating/approval sessions, recovery, DCR, PKCE, token exchange, all 4 MCP tools and the user's current **9 authorized projects**. `smoke-live.mjs finish` verified refresh and revoked the temporary test grant. No Clarity API requests were made. The user's original failed browser tab now shows the actionable recovery page instead of HTTP 500. An actual final connection in the user's ChatGPT account remains a user sign-in/consent step.
