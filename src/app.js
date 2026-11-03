@@ -15,8 +15,9 @@ export function createApp({store,clarity,base,password}) {
   const baseUrl=new URL(base);if(baseUrl.pathname!=='/'||baseUrl.search||baseUrl.hash||baseUrl.username) throw new Error('PUBLIC_URL must be an origin');
   const app=express(),provider=new AuthProvider(store,base),passwordHash=scryptSync(password,'aitronic-clarity-admin',32);
   app.disable('x-powered-by');app.set('trust proxy',1);
+  const cspDirectives={defaultSrc:["'none'"],styleSrc:["'unsafe-inline'"],formAction:["'self'"],baseUri:["'none'"],frameAncestors:["'none'"]};
   // no-referrer makes browsers send Origin: null on form navigations, breaking strict CSRF origin checks.
-  app.use(helmet({referrerPolicy:{policy:'same-origin'},contentSecurityPolicy:{directives:{defaultSrc:["'none'"],styleSrc:["'unsafe-inline'"],formAction:["'self'"],baseUri:["'none'"],frameAncestors:["'none'"]}}}));
+  app.use(helmet({referrerPolicy:{policy:'same-origin'},contentSecurityPolicy:{directives:cspDirectives}}));
   app.use((req,res,next)=>{res.set('Cache-Control','no-store');next();});
   app.use(express.json({limit:'32kb'}));app.use(express.urlencoded({extended:false,limit:'32kb'}));
   const uiPaths=['/admin','/login','/logout','/authorize','/consent'];
@@ -35,6 +36,12 @@ export function createApp({store,clarity,base,password}) {
     next();
   };
   const loggedIn=(req,res,next)=>{if(!req.session.authenticated)return res.redirect('/login?next='+encodeURIComponent(req.originalUrl));next();};
+  const consentCsp=(req,res,next)=>{
+    // Chromium applies form-action to redirects after a form POST as well as the form's action.
+    // Only this validated request's registered callback origin is allowed, only on consent responses.
+    const callbackOrigin=new URL(provider.pending(req).params.redirectUri).origin;
+    return helmet.contentSecurityPolicy({directives:{...cspDirectives,formAction:["'self'",callbackOrigin]}})(req,res,next);
+  };
   const limiter=rateLimit({windowMs:15*60000,limit:10,standardHeaders:'draft-8',legacyHeaders:false});
   app.get('/health',(_req,res)=>{store.db.prepare('SELECT 1').get();res.json({status:'ok',service:'aitronic-clarity-mcp'});});
   app.get('/',(_req,res)=>res.send(page('Microsoft Clarity MCP','<section><p>Drošs vairāku projektu analītikas savienojums ar ChatGPT un Claude.</p><p>MCP adrese: <code>'+base+'/mcp</code></p><p><a href="/admin">Atvērt projektu pārvaldību</a></p></section>')));
@@ -57,9 +64,9 @@ export function createApp({store,clarity,base,password}) {
   app.get('/consent',loggedIn,(req,res)=>{
     const restart=provider.restartForSession(req);
     if(restart)return res.redirect(restart);
-    res.send(provider.consentPage(req));
+    consentCsp(req,res,()=>res.send(provider.consentPage(req)));
   });
-  app.post('/consent',loggedIn,csrf,(req,res)=>provider.approve(req,res));
+  app.post('/consent',loggedIn,csrf,consentCsp,(req,res)=>provider.approve(req,res));
   app.use(mcpAuthRouter({provider,issuerUrl:baseUrl,resourceServerUrl:new URL(base+'/mcp'),scopesSupported:['clarity:read'],resourceName:'Aitronic Clarity MCP',serviceDocumentationUrl:new URL(base)}));
   const auth=requireBearerAuth({verifier:provider,requiredScopes:['clarity:read'],expectedResource:base+'/mcp',resourceMetadataUrl:base+'/.well-known/oauth-protected-resource/mcp'});
   app.use('/mcp',(req,res,next)=>{if(req.headers.origin&&req.headers.origin!==base)return res.status(403).json({error:'Origin not allowed'});next();},auth,rateLimit({windowMs:60000,limit:120,standardHeaders:'draft-8',legacyHeaders:false}));

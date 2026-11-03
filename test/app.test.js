@@ -22,12 +22,12 @@ test('OAuth PKCE, consent, scoped MCP tools, refresh rotation, revocation, admin
   const verifier='v'.repeat(64),challenge=createHash('sha256').update(verifier).digest('base64url');
   const params=new URLSearchParams({client_id:client.client_id,redirect_uri:client.redirect_uris[0],response_type:'code',code_challenge:challenge,code_challenge_method:'S256',scope:'clarity:read',state:'test-state',resource:base+'/mcp'});
   r=await request('/authorize?'+params);assert.equal(r.status,302);const consent=r.headers.get('location');
-  r=await request(consent);assert.equal(r.status,302);r=await request(r.headers.get('location'));assert.equal(r.headers.get('referrer-policy'),'same-origin');let html=await r.text();let token=csrf(html);
+  r=await request(consent);assert.equal(r.status,302);r=await request(r.headers.get('location'));assert.equal(r.headers.get('referrer-policy'),'same-origin');assert.doesNotMatch(r.headers.get('content-security-policy'),/example\.com/);let html=await r.text();let token=csrf(html);
   r=await request('/login',form({password,csrf:token,next:consent}));assert.equal(r.headers.get('location'),consent);
-  r=await request(consent);html=await r.text();assert.match(html,/Integration test/);token=csrf(html);
+  r=await request(consent);html=await r.text();assert.match(html,/Integration test/);assert.equal(r.headers.get('content-security-policy').split(';').find(d=>d.startsWith('form-action ')),"form-action 'self' https://example.com");token=csrf(html);
   r=await request('/admin/projects',form({name:'Bad',domain:'bad.com',csrf:'wrong'}));assert.equal(r.status,403);
   const pending=new URL(consent,base).searchParams.get('request');
-  r=await request('/consent',form({csrf:token,request:pending,decision:'approve',projects:'rockmole-lv'}));assert.equal(r.status,302);const callback=new URL(r.headers.get('location'));assert.equal(callback.searchParams.get('state'),'test-state');const code=callback.searchParams.get('code');assert.ok(code);
+  r=await request('/consent',form({csrf:token,request:pending,decision:'approve',projects:'rockmole-lv'}));assert.equal(r.status,302);assert.equal(r.headers.get('content-security-policy').split(';').find(d=>d.startsWith('form-action ')),"form-action 'self' https://example.com");const callback=new URL(r.headers.get('location'));assert.equal(callback.searchParams.get('state'),'test-state');const code=callback.searchParams.get('code');assert.ok(code);
   r=await request('/token',form({grant_type:'authorization_code',client_id:client.client_id,code,code_verifier:'wrong',redirect_uri:client.redirect_uris[0],resource:base+'/mcp'}));assert.equal(r.status,400);
   r=await request('/token',form({grant_type:'authorization_code',client_id:client.client_id,code,code_verifier:verifier,redirect_uri:client.redirect_uris[0],resource:base+'/mcp'}));assert.equal(r.status,200);const tokens=await r.json();
   r=await request('/token',form({grant_type:'authorization_code',client_id:client.client_id,code,code_verifier:verifier,redirect_uri:client.redirect_uris[0]}));assert.equal(r.status,400);
