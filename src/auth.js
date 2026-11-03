@@ -1,6 +1,9 @@
 import { InvalidGrantError, InvalidTokenError, InvalidTargetError, InvalidScopeError, InvalidClientMetadataError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { random, hash } from './store.js';
 import { esc, page, hidden } from './views.js';
+export class ConsentRequestError extends Error {
+  constructor(reason,restartUrl) {super('OAuth consent request is unavailable');this.name='ConsentRequestError';this.reason=reason;this.restartUrl=restartUrl;}
+}
 export class AuthProvider {
   constructor(store,base) {
     this.store=store;this.resource=base+'/mcp';
@@ -18,10 +21,31 @@ export class AuthProvider {
   scopes(scopes=[]) { if(scopes.some(s=>s!=='clarity:read')) throw new InvalidScopeError('Only clarity:read is supported'); }
   async authorize(client,params,res) {
     this.target(params.resource);this.scopes(params.scopes);
-    const id=random(); this.store.put('pending',id,{clientId:client.client_id,name:client.client_name||client.client_id,params:{...params,resource:params.resource?.toString()},session:res.req.sessionId},600);
+    // Keep the validated intent briefly after expiry so it can be restarted, never auto-approved.
+    const id=random(); this.store.put('pending',id,{clientId:client.client_id,name:client.client_name||client.client_id,params:{...params,resource:params.resource?.toString()},session:res.req.sessionId,validUntil:Date.now()+600000},3600);
     res.redirect('/consent?request='+id);
   }
-  pending(req) {const p=this.store.get('pending',String(req.query.request||req.body.request||''));if(!p||p.session!==req.sessionId) throw new Error('Authorization request expired. Reconnect from your MCP client.');return p;}
+  restartUrl(p) {
+    const q=new URLSearchParams({client_id:p.clientId,response_type:'code',redirect_uri:p.params.redirectUri,code_challenge:p.params.codeChallenge,code_challenge_method:'S256'});
+    if(p.params.state!==undefined)q.set('state',p.params.state);
+    if(p.params.scopes?.length)q.set('scope',p.params.scopes.join(' '));
+    if(p.params.resource)q.set('resource',p.params.resource);
+    return '/authorize?'+q;
+  }
+  findPending(req) {
+    const id=req.method==='POST'?req.body?.request:req.query?.request;
+    const p=typeof id==='string'?this.store.get('pending',id):undefined;
+    if(!p)throw new ConsentRequestError('missing');
+    if(p.validUntil!==undefined&&p.validUntil<=Date.now())throw new ConsentRequestError('expired',this.restartUrl(p));
+    return p;
+  }
+  restartForSession(req) {
+    const p=this.findPending(req);
+    // OAuth clients may open consent in a different browser than the initial authorization request.
+    // Re-run the SDK's full client/redirect/PKCE validation and show fresh consent in that browser.
+    return p.session!==req.sessionId?this.restartUrl(p):undefined;
+  }
+  pending(req) {const p=this.findPending(req);if(p.session!==req.sessionId)throw new ConsentRequestError('session_mismatch',this.restartUrl(p));return p;}
   consentPage(req) {
     const p=this.pending(req);return page('Atļaut Clarity piekļuvi',`<section><p>Lietotne <strong>${esc(p.name)}</strong> pieprasa lasīšanas piekļuvi Clarity projektu analītikai.</p><p>Atbildes adrese: <code>${esc(p.params.redirectUri)}</code></p><p>Atzīmē projektus, ko šis pieslēgums drīkst lasīt. Jauni projekti netiks pievienoti automātiski.</p><form method="post" action="/consent">${hidden('csrf',req.session.csrf)}${hidden('request',req.query.request)}${this.store.projects().filter(p=>p.enabled).map(p=>`<label><input type="checkbox" name="projects" value="${esc(p.id)}">${esc(p.name)}</label>`).join('')}<button name="decision" value="approve">Atļaut atlasītos projektus</button> <button class="secondary" name="decision" value="deny">Atteikt</button></form></section>`);
   }

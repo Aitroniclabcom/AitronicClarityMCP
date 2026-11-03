@@ -38,6 +38,8 @@ Ask either assistant: “List my Clarity projects, then analyze Rockmole traffic
 
 Only read tools are exposed over MCP. Project credentials and administration remain in the browser UI. A consent grant covers the explicitly selected project IDs; adding a project later requires reconnecting to grant access. Revoke a connector from the management page immediately if it is no longer needed.
 
+If an OAuth client opens the approval link in another browser session, the server starts a fresh authorization request in that browser and asks for project consent again. Approval links remain active for 10 minutes; their validated intent is kept for one hour solely to offer a restart link. An expired or already-used link never grants access. For an old link with no recoverable intent, return to the ChatGPT/Claude connector and start connecting again.
+
 ## Data limits and collection
 
 The [Microsoft Data Export API](https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api) permits **10 requests/project/day**, only the last **24, 48 or 72 hours**, up to **3 dimensions**, and **1000 rows without pagination**. It does not provide heatmap images or session recording video. Any other caller using the same project also consumes Microsoft's quota.

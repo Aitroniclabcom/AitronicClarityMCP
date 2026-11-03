@@ -6,10 +6,10 @@ import { z } from 'zod';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { AuthProvider } from './auth.js';
+import { AuthProvider, ConsentRequestError } from './auth.js';
 import { createServer } from './mcp.js';
 import { random,hash } from './store.js';
-import { page,login,dashboard } from './views.js';
+import { page,login,dashboard,consentRecovery } from './views.js';
 export function createApp({store,clarity,base,password}) {
   if(!password||password.length<24) throw new Error('ADMIN_PASSWORD must contain at least 24 characters');
   const baseUrl=new URL(base);if(baseUrl.pathname!=='/'||baseUrl.search||baseUrl.hash||baseUrl.username) throw new Error('PUBLIC_URL must be an origin');
@@ -54,7 +54,11 @@ export function createApp({store,clarity,base,password}) {
   });
   app.post('/admin/check',loggedIn,csrf,async(req,res)=>{let msg;try{const r=await clarity.insights(String(req.body.id),1,[]);msg='Savienojums darbojas. Dati: '+r.captured_at;}catch(e){msg=e.message;}res.redirect('/admin?message='+encodeURIComponent(msg));});
   app.post('/admin/revoke',loggedIn,csrf,(req,res)=>{store.remove('grant',String(req.body.id));store.audit('oauth_revoked',String(req.body.id));res.redirect('/admin');});
-  app.get('/consent',loggedIn,(req,res)=>res.send(provider.consentPage(req)));
+  app.get('/consent',loggedIn,(req,res)=>{
+    const restart=provider.restartForSession(req);
+    if(restart)return res.redirect(restart);
+    res.send(provider.consentPage(req));
+  });
   app.post('/consent',loggedIn,csrf,(req,res)=>provider.approve(req,res));
   app.use(mcpAuthRouter({provider,issuerUrl:baseUrl,resourceServerUrl:new URL(base+'/mcp'),scopesSupported:['clarity:read'],resourceName:'Aitronic Clarity MCP',serviceDocumentationUrl:new URL(base)}));
   const auth=requireBearerAuth({verifier:provider,requiredScopes:['clarity:read'],expectedResource:base+'/mcp',resourceMetadataUrl:base+'/.well-known/oauth-protected-resource/mcp'});
@@ -66,6 +70,10 @@ export function createApp({store,clarity,base,password}) {
   });
   app.all('/mcp',(_req,res)=>res.status(405).set('Allow','POST').end());
   app.use((error,req,res,_next)=>{
+    if(error instanceof ConsentRequestError) {
+      console.warn('OAuth consent needs restart:',error.reason);
+      return res.status(410).send(consentRecovery(error.restartUrl));
+    }
     const invalid=error instanceof z.ZodError;
     if(!invalid) console.error('Request failed:',JSON.stringify({route:req.route?.path||'middleware',method:req.method,name:error.name,code:error.code,errno:error.errcode,source:String(error.stack||'').match(/(?:src[/\\][\w.-]+\.js):\d+:\d+/g)?.slice(0,5)}));
     if(!res.headersSent)res.status(invalid?400:500).send(page('Pieprasījums neizdevās',invalid?'<p>Pārbaudiet ievadītos projekta laukus.</p>':'<p>Pieprasījumu neizdevās apstrādāt. Autorizācijas laikā sāciet savienojuma pievienošanu vēlreiz.</p>'));
