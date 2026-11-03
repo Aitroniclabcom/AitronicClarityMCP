@@ -25,7 +25,14 @@ export function createApp({store,clarity,base,password}) {
     if(!session){id=random();session={csrf:random(),authenticated:false};store.put('session',hash(id),session,8*3600);res.cookie('clarity_session',id,{httpOnly:true,secure:baseUrl.protocol==='https:',sameSite:'lax',maxAge:8*3600000,path:'/'});}
     req.session=session;req.sessionId=hash(id);next();
   });
-  const csrf=(req,res,next)=>{if(req.body.csrf!==req.session.csrf||(req.headers.origin&&req.headers.origin!==base)) return res.status(403).send(page('Pieprasījums noraidīts','<p>Atveriet lapu vēlreiz.</p>'));next();};
+  const csrf=(req,res,next)=>{
+    const matches=req.body.csrf===req.session.csrf,originMatches=!req.headers.origin||req.headers.origin===base;
+    if(!matches||!originMatches) {
+      console.warn('Form validation rejected',JSON.stringify({csrfMatches:matches,originMatches,hasSessionCookie:String(req.headers.cookie||'').includes('clarity_session='),bodyCsrfType:typeof req.body.csrf}));
+      return res.status(403).send(page('Pieprasījums noraidīts','<p>Atveriet <a href="/login">pieslēgšanās lapu</a> vēlreiz un mēģiniet no jauna.</p>'));
+    }
+    next();
+  };
   const loggedIn=(req,res,next)=>{if(!req.session.authenticated)return res.redirect('/login?next='+encodeURIComponent(req.originalUrl));next();};
   const limiter=rateLimit({windowMs:15*60000,limit:10,standardHeaders:'draft-8',legacyHeaders:false});
   app.get('/health',(_req,res)=>{store.db.prepare('SELECT 1').get();res.json({status:'ok',service:'aitronic-clarity-mcp'});});
