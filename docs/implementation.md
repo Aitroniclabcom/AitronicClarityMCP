@@ -36,3 +36,17 @@ The user reported repeated failures while adding the ChatGPT connector. The real
 Regression tests first reproduced HTTP 500 when a valid authorization intent was opened from another authenticated browser. The fix restarts the full SDK authorization validation and requires fresh consent in the receiving browser. Expired GET/POST intents return HTTP 410 with a recovery page, never an authorization code. Validated request intent is retained for one hour only to offer a restart link; its consent validity remains ten minutes. Already-used or missing intents instruct the user to start from the ChatGPT/Claude connector again.
 
 Production deployment `fhr1bwmczpbgnsi8w7sqfurm`, runtime commit `4f7a2cb16f7ccb6d2ce32cf8218ceef261604307`, finished healthy at 11:38 UTC. All 4 tests pass. Public `smoke-live.mjs handoff` verified separate initiating/approval sessions, recovery, DCR, PKCE, token exchange, all 4 MCP tools and the user's current **9 authorized projects**. `smoke-live.mjs finish` verified refresh and revoked the temporary test grant. No Clarity API requests were made. The user's original failed browser tab now shows the actionable recovery page instead of HTTP 500. An actual final connection in the user's ChatGPT account remains a user sign-in/consent step.
+
+## Browser callback root cause — 2026-11-03
+
+The user clarified that the first approval click did nothing and the second showed the missing-request page. The previous recovery fix addressed that second-click symptom; HTTP tests did not execute Chromium's document navigation policy.
+
+An isolated Chrome fixture reproduced the exact first-click behavior. A newly added real Chromium CI test on unchanged production code (commit `394cecf`, run `41632545019`) failed with an explicit CSP `form-action 'self'` violation. Chromium applies that directive to cross-origin redirects after the consent POST. The server had already issued a code and consumed the consent intent, explaining the second-click error.
+
+The fix adds only the active request's validated, registered callback origin to `form-action`, only on consent GET/POST responses. Login/admin remain restricted to self; no wildcard or global callback allowlist is introduced. HTTP regression checks verify both the consent policy and isolation from login pages. Manual Chrome retest with the fix navigated on the first approval, completed PKCE token exchange and successfully called `list_projects` with exactly one allowed fixture project. `e2e/oauth-callback.spec.js` now exercises that complete path in CI.
+
+## Actual ChatGPT connection confirmed — 2026-11-03
+
+After the user's explicit approval to complete the ChatGPT grant, the real `ClarityAitronic` workspace plugin (`plugin_asdk_app_6ae9cc01feb88191a00cafd17e9acb66`) completed OAuth in Chrome. The consent page identified ChatGPT, displayed its registered `chatgpt.com/connector/oauth/` callback and all nine projects. All nine were selected and approved once. The browser returned through ChatGPT's OAuth callback to the plugin page, which displayed **Primary is now connected**.
+
+Opening the app details showed **Read 4**, with `get_capabilities`, `get_history`, `get_insights` and `list_projects`, confirming ChatGPT could enumerate the authenticated MCP tools. No Clarity analytics API request was needed for this connection verification. The connected plugin tab was left open. A local ignored proof screenshot is stored at `.private/chatgpt-connected.jpg`; it contains no credentials.

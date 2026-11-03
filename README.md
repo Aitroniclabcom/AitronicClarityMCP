@@ -75,4 +75,8 @@ Generate `ENCRYPTION_KEY` as 32 random bytes in hexadecimal (64 characters), and
 
 ## Verification
 
-`npm test` covers OAuth discovery, DCR, PKCE rejection/success, one-use codes, project-scoped tool access, refresh rotation, revocation, CSRF rejection, encrypted storage, caching, concurrent deduplication and request budgets. Live Microsoft analytics can only be verified after real project tokens are supplied. Successful server tests do not imply a completed sign-in inside a user's ChatGPT or Claude account.
+`npm test` covers OAuth discovery, DCR, PKCE rejection/success, one-use codes, project-scoped tool access, refresh rotation, revocation, CSRF rejection, encrypted storage, caching, concurrent deduplication and request budgets.
+
+`npm run test:browser` runs a real Chromium browser against an isolated in-memory fixture. One approval must navigate to a different-origin callback, exchange its code with PKCE, then call the scoped MCP tool. CI installs Chromium with `npx playwright install --with-deps chromium` first. Consent responses allow only the current request's validated callback origin through CSP `form-action`; login/admin pages retain `form-action 'self'`.
+
+Live Microsoft analytics can only be verified after real project tokens are supplied. Successful server tests do not imply a completed sign-in inside a user's ChatGPT or Claude account.
