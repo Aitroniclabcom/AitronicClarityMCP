@@ -15,7 +15,8 @@ export function createApp({store,clarity,base,password}) {
   const baseUrl=new URL(base);if(baseUrl.pathname!=='/'||baseUrl.search||baseUrl.hash||baseUrl.username) throw new Error('PUBLIC_URL must be an origin');
   const app=express(),provider=new AuthProvider(store,base),passwordHash=scryptSync(password,'aitronic-clarity-admin',32);
   app.disable('x-powered-by');app.set('trust proxy',1);
-  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'none'"],styleSrc:["'unsafe-inline'"],formAction:["'self'"],baseUri:["'none'"],frameAncestors:["'none'"]}}}));
+  // no-referrer makes browsers send Origin: null on form navigations, breaking strict CSRF origin checks.
+  app.use(helmet({referrerPolicy:{policy:'same-origin'},contentSecurityPolicy:{directives:{defaultSrc:["'none'"],styleSrc:["'unsafe-inline'"],formAction:["'self'"],baseUri:["'none'"],frameAncestors:["'none'"]}}}));
   app.use((req,res,next)=>{res.set('Cache-Control','no-store');next();});
   app.use(express.json({limit:'32kb'}));app.use(express.urlencoded({extended:false,limit:'32kb'}));
   const uiPaths=['/admin','/login','/logout','/authorize','/consent'];

@@ -22,7 +22,7 @@ test('OAuth PKCE, consent, scoped MCP tools, refresh rotation, revocation, admin
   const verifier='v'.repeat(64),challenge=createHash('sha256').update(verifier).digest('base64url');
   const params=new URLSearchParams({client_id:client.client_id,redirect_uri:client.redirect_uris[0],response_type:'code',code_challenge:challenge,code_challenge_method:'S256',scope:'clarity:read',state:'test-state',resource:base+'/mcp'});
   r=await request('/authorize?'+params);assert.equal(r.status,302);const consent=r.headers.get('location');
-  r=await request(consent);assert.equal(r.status,302);r=await request(r.headers.get('location'));let html=await r.text();let token=csrf(html);
+  r=await request(consent);assert.equal(r.status,302);r=await request(r.headers.get('location'));assert.equal(r.headers.get('referrer-policy'),'same-origin');let html=await r.text();let token=csrf(html);
   r=await request('/login',form({password,csrf:token,next:consent}));assert.equal(r.headers.get('location'),consent);
   r=await request(consent);html=await r.text();assert.match(html,/Integration test/);token=csrf(html);
   r=await request('/admin/projects',form({name:'Bad',domain:'bad.com',csrf:'wrong'}));assert.equal(r.status,403);
