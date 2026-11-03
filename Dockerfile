@@ -2,7 +2,7 @@ FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN apk add --no-cache curl && npm ci --omit=dev && npm cache clean --force
 COPY src ./src
 RUN mkdir -p /data && chown -R node:node /app /data
 USER node

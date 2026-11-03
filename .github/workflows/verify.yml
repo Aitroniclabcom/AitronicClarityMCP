@@ -15,3 +15,8 @@ jobs:
       - run: npm test
       - run: npm audit --omit=dev
       - run: docker build -t clarity-mcp:verify .
+      - name: Verify container startup
+        run: |
+          docker run -d --name clarity-test -e ADMIN_PASSWORD=ci-only-test-password-32-characters -e ENCRYPTION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa clarity-mcp:verify
+          sleep 3
+          docker exec clarity-test curl --fail http://127.0.0.1:3000/health
